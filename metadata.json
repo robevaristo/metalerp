@@ -1,0 +1,5 @@
+{
+  "name": "MetalERP",
+  "description": "Smart Metal Management system. Manages workflow from Commercial Proposals to Engineering, Material breakdown (PCP), Stock checks, and Purchasing.",
+  "requestFramePermissions": []
+}
