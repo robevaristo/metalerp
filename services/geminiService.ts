@@ -1,100 +1,141 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { JobRecord } from "../types";
+import { MaterialType, Project } from "../types";
 
-const getClient = () => {
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) return null;
-    return new GoogleGenAI({ apiKey });
-};
+const MODEL_NAME = "gemini-3-flash-preview";
 
-interface SimpleItem {
-    description: string;
-    quantity: number;
-}
-
-export const suggestMaterials = async (items: SimpleItem[]) => {
-  const ai = getClient();
-  if (!ai) {
-    console.warn("Gemini API Key missing");
-    return [];
-  }
-
-  // Construct a prompt listing all items
-  const itemsText = items.map(i => `- ${i.description} (Quantidade: ${i.quantity})`).join('\n');
-
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: `Atue como um Engenheiro de PCP Industrial experiente.
-      Analise esta lista de itens de uma Ordem de Produção (OP) e gere uma LISTA TÉCNICA CONSOLIDADA (BOM) de materiais necessários para fabricar TODOS eles.
-      
-      ITENS A FABRICAR:
-      ${itemsText}
-      
-      Regras:
-      1. Calcule a estimativa total de material para a quantidade solicitada.
-      2. Categorize estritamente em:
-         - BARRA (Perfis, tubos, vigas, maciços)
-         - CHAPA (Chapas lisas, xadrez, expandidas)
-         - COMERCIAL_PART (Parafusos, rolamentos, tintas, itens comprados prontos, mancais de compra se não for fabricação)
-      3. Seja específico nas descrições (ex: "Barra Chata 1x1/8 A36", "Parafuso M10x50").
-      
-      Retorne apenas JSON.`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              name: { type: Type.STRING, description: "Nome técnico do material" },
-              type: { type: Type.STRING, enum: ["BARRA", "CHAPA", "COMERCIAL_PART"] },
-              quantity: { type: Type.NUMBER, description: "Quantidade estimada total" },
-              unit: { type: Type.STRING, description: "Unidade (m, kg, pç, un)" }
-            },
-            required: ["name", "type", "quantity", "unit"]
-          }
+const robustJsonParse = (text: string) => {
+    if (!text) return { materials: [] };
+    let cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start !== -1 && end !== -1) {
+        cleaned = cleaned.substring(start, end + 1);
+    } else {
+        const startArr = cleaned.indexOf('[');
+        const endArr = cleaned.lastIndexOf(']');
+        if (startArr !== -1 && endArr !== -1) {
+            cleaned = cleaned.substring(startArr, endArr + 1);
         }
-      }
-    });
-
-    return JSON.parse(response.text || "[]");
-  } catch (error) {
-    console.error("Error generating materials:", error);
-    return [];
-  }
+    }
+    cleaned = cleaned.replace(/,\s*]/g, ']').replace(/,\s*}/g, '}');
+    try {
+        const parsed = JSON.parse(cleaned);
+        if (Array.isArray(parsed)) return { materials: parsed };
+        if (parsed && parsed.materials) return parsed;
+        return { materials: [] };
+    } catch (e) {
+        try {
+            let fixed = cleaned;
+            if (!fixed.endsWith('}')) fixed += '}]}';
+            if (fixed.split('[').length > fixed.split(']').length) fixed += ']';
+            if (fixed.split('{').length > fixed.split('}').length) fixed += '}';
+            return JSON.parse(fixed);
+        } catch (innerE) {
+            console.error("Erro fatal no JSON:", e);
+            return { materials: [] };
+        }
+    }
 };
 
-export const analyzeWorkLogs = async (history: JobRecord[]) => {
-    const ai = getClient();
-    if (!ai) return "Erro: Chave de API não configurada.";
-
-    // Simplificar dados para enviar para a IA
-    const summaryData = history.map(h => ({
-        func: h.funcionario,
-        servico: h.serviceType,
-        op: h.op,
-        maquina: h.maquina,
-        duracao_minutos: Math.round(h.durationSeconds / 60)
-    }));
-
-    const prompt = `
-    Analise os seguintes registros de trabalho de uma fábrica metalúrgica.
-    Identifique padrões de produtividade, gargalos potenciais ou observações relevantes sobre o tempo gasto por serviço/máquina.
-    Seja direto e use bullet points. Fale português.
+export const processProjectBatch = async (dataChunk: any[], retryCount = 0): Promise<any> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
-    Dados:
-    ${JSON.stringify(summaryData)}
-    `;
+    // Preparação das linhas com indexador para que a IA não pule nada
+    const listString = dataChunk.map((row, i) => {
+        const rowData = Array.isArray(row) 
+            ? row.map(c => (c === null || c === undefined) ? "" : String(c).trim()).join(' | ') 
+            : String(row);
+        return `REF_${i+1}: ${rowData}`;
+    }).join('\n');
+
+    const systemInstruction = `Você é um Analista de PCP de Precisão em Metalurgia.
+Sua missão absoluta é converter CADA linha de texto em um item de material organizado.
+
+REGRAS DE CATEGORIZAÇÃO (CRÍTICO):
+1. COMERCIAL (COMMERCIAL_PART): Toda e qualquer ARRUELA (Lisa, Pesada, de Pressão), Parafuso, Porca ou item de fixação DEVE ser COMMERCIAL_PART. Nunca classifique ARRUELA como SHEET.
+2. CHAPAS (SHEET): Identifique por "CHAPA", "CH", "PLACA", símbolo "#" (ex: #14), ou medidas (ex: 2000x1200). Se for Chapa e tiver Ø, extraia o valor do Ø.
+3. BARRAS (BAR): Vigas, Perfis, Tubos, Cantoneiras, Ferro Chato.
+
+REGRAS DE EXTRAÇÃO:
+- Se não achar quantidade, assuma 1.
+- Extraia a Bitola (gauge) para o campo gauge. Ex: "1/4", "3/16", "#11", "M20".
+- Se houver Ø na descrição de uma CHAPA, mapeie esse valor para widthMm e lengthMm se eles estiverem vazios.
+
+RETORNO: JSON com chave 'materials'.`;
 
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: prompt,
+            model: MODEL_NAME,
+            contents: `TEXTO BRUTO DA PLANILHA:\n${listString}`,
+            config: {
+                systemInstruction: systemInstruction,
+                responseMimeType: "application/json",
+                temperature: 0,
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        materials: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    detectedType: { type: Type.STRING, enum: ['SHEET', 'BAR', 'COMMERCIAL'] },
+                                    name: { type: Type.STRING },
+                                    quantity: { type: Type.NUMBER },
+                                    gauge: { type: Type.STRING },
+                                    materialGrade: { type: Type.STRING },
+                                    lengthMm: { type: Type.NUMBER },
+                                    widthMm: { type: Type.NUMBER },
+                                    drawingNumber: { type: Type.STRING },
+                                    details: { type: Type.STRING }
+                                },
+                                required: ['name', 'quantity', 'detectedType']
+                            }
+                        }
+                    }
+                }
+            }
         });
-        return response.text;
-    } catch (error) {
-        console.error("AI Error:", error);
-        return "Não foi possível gerar a análise no momento.";
+        
+        const text = response.text;
+        if (!text) throw new Error("A IA não retornou dados.");
+        
+        return robustJsonParse(text);
+    } catch (error: any) {
+        console.error("Erro na chamada Gemini:", error);
+        if (error?.message?.includes('429')) {
+            if (retryCount < 2) {
+                await new Promise(r => setTimeout(r, 20000));
+                return processProjectBatch(dataChunk, retryCount + 1);
+            }
+        }
+        throw error;
     }
+};
+
+export const getAgentInsights = async (agentType: 'BAR' | 'SHEET' | 'COMMERCIAL', projects: Project[]): Promise<string> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const materials = projects.flatMap(p => p.materials.filter(m => m.type === (agentType === 'BAR' ? MaterialType.BAR : agentType === 'SHEET' ? MaterialType.SHEET : MaterialType.COMMERCIAL)));
+    if (materials.length === 0) return "Sem dados.";
+    try {
+        const response = await ai.models.generateContent({
+            model: MODEL_NAME,
+            contents: `DADOS: ${JSON.stringify(materials.slice(0, 10))}`,
+            config: { systemInstruction: `Analista PCP ${agentType}. Dê 1 aviso curto.`, temperature: 0 }
+        });
+        return response.text || "Sem avisos.";
+    } catch (e) { return "Cota cheia."; }
+};
+
+export const askAgent = async (agentType: 'BAR' | 'SHEET' | 'COMMERCIAL', prompt: string, projects: Project[]): Promise<string> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const context = projects.flatMap(p => p.materials.filter(m => m.type === (agentType === 'BAR' ? MaterialType.BAR : agentType === 'SHEET' ? MaterialType.SHEET : MaterialType.COMMERCIAL)));
+    try {
+        const response = await ai.models.generateContent({
+            model: MODEL_NAME,
+            contents: `MATERIAIS: ${JSON.stringify(context.slice(0, 20))}\nPERGUNTA: ${prompt}`,
+            config: { systemInstruction: `Engenheiro PCP ${agentType}.`, temperature: 0.1 }
+        });
+        return response.text || "Sem resposta.";
+    } catch (e) { return "Erro de cota (429)."; }
 };

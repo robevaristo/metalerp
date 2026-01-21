@@ -1,14 +1,18 @@
+
 import React from 'react';
 import { Project, ProjectStatus } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { TrendingUp, AlertCircle, CheckCircle, Clock } from 'lucide-react';
+
+const FactoryIcon = ({size}: {size: number}) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7 5V8l-7 5V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M17 18h1"/><path d="M12 18h1"/><path d="M7 18h1"/></svg>
+);
 
 interface DashboardProps {
   projects: Project[];
 }
 
 export const DashboardView: React.FC<DashboardProps> = ({ projects }) => {
-  // Calculate Stats
   const total = projects.length;
   const inProduction = projects.filter(p => p.status === ProjectStatus.PRODUCTION).length;
   const inPurchasing = projects.filter(p => p.status === ProjectStatus.PURCHASING).length;
@@ -23,83 +27,79 @@ export const DashboardView: React.FC<DashboardProps> = ({ projects }) => {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-slate-800">Visão Geral da Fábrica</h2>
+      <h2 className="text-2xl font-black uppercase tracking-tighter text-slate-800">Visão Geral da Fábrica</h2>
       
-      {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 flex items-center justify-between">
           <div>
-            <p className="text-slate-500 text-sm font-medium">Total de OPs</p>
-            <p className="text-3xl font-bold text-slate-800">{total}</p>
+            <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Total de OPs</p>
+            <p className="text-3xl font-black text-slate-800 tracking-tighter">{total}</p>
           </div>
-          <div className="bg-blue-100 p-3 rounded-lg text-blue-600"><TrendingUp size={24} /></div>
+          <div className="bg-blue-100 p-4 rounded-2xl text-blue-600"><TrendingUp size={24} /></div>
         </div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 flex items-center justify-between">
           <div>
-            <p className="text-slate-500 text-sm font-medium">Em Produção</p>
-            <p className="text-3xl font-bold text-emerald-600">{inProduction}</p>
+            <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Em Produção</p>
+            <p className="text-3xl font-black text-emerald-600 tracking-tighter">{inProduction}</p>
           </div>
-          <div className="bg-emerald-100 p-3 rounded-lg text-emerald-600"><FactoryIcon size={24} /></div>
+          <div className="bg-emerald-100 p-4 rounded-2xl text-emerald-600"><FactoryIcon size={24} /></div>
         </div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 flex items-center justify-between">
           <div>
-            <p className="text-slate-500 text-sm font-medium">Parado em Compras</p>
-            <p className="text-3xl font-bold text-red-500">{inPurchasing}</p>
+            <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Parado Compras</p>
+            <p className="text-3xl font-black text-red-500 tracking-tighter">{inPurchasing}</p>
           </div>
-          <div className="bg-red-100 p-3 rounded-lg text-red-500"><AlertCircle size={24} /></div>
+          <div className="bg-red-100 p-4 rounded-2xl text-red-500"><AlertCircle size={24} /></div>
         </div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 flex items-center justify-between">
           <div>
-            <p className="text-slate-500 text-sm font-medium">Novas OPs</p>
-            <p className="text-3xl font-bold text-yellow-600">{inCommercial}</p>
+            <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Novas OPs</p>
+            <p className="text-3xl font-black text-yellow-600 tracking-tighter">{inCommercial}</p>
           </div>
-          <div className="bg-yellow-100 p-3 rounded-lg text-yellow-600"><Clock size={24} /></div>
+          <div className="bg-yellow-100 p-4 rounded-2xl text-yellow-600"><Clock size={24} /></div>
         </div>
       </div>
 
-      {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-96">
-          <h3 className="text-lg font-bold text-slate-700 mb-4">Volume por Estágio</h3>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={statusData}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="name" tick={{fontSize: 12}} interval={0} angle={-15} textAnchor="end" height={60}/>
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="value" fill="#3B82F6" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+        <div className="bg-white p-8 rounded-[3rem] border border-slate-200 h-[450px] flex flex-col">
+          <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-8">Fluxo por Estágio</h3>
+          <div className="flex-1 w-full min-h-0">
+            <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={statusData} margin={{ top: 10, right: 30, left: 0, bottom: 40 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="name" tick={{fontSize: 10, fontWeight: 900}} interval={0} angle={-30} textAnchor="end" />
+                <YAxis tick={{fontSize: 10}} stroke="#cbd5e1" />
+                <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}} />
+                <Bar dataKey="value" fill="#0d9488" radius={[8, 8, 0, 0]} barSize={40} />
+                </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-96">
-          <h3 className="text-lg font-bold text-slate-700 mb-4">Distribuição</h3>
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={statusData}
-                cx="50%"
-                cy="50%"
-                innerRadius={60}
-                outerRadius={100}
-                fill="#8884d8"
-                paddingAngle={5}
-                dataKey="value"
-              >
-                {statusData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
+        <div className="bg-white p-8 rounded-[3rem] border border-slate-200 h-[450px] flex flex-col">
+          <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-8">Distribuição de Status</h3>
+          <div className="flex-1 w-full min-h-0">
+            <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                <Pie
+                    data={statusData}
+                    cx="50%"
+                    cy="45%"
+                    innerRadius={70}
+                    outerRadius={110}
+                    paddingAngle={8}
+                    dataKey="value"
+                >
+                    {statusData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="none" />
+                    ))}
+                </Pie>
+                <Tooltip />
+                </PieChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       </div>
     </div>
   );
 };
-
-// Helper icon
-const FactoryIcon = ({size}: {size: number}) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7 5V8l-7 5V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M17 18h1"/><path d="M12 18h1"/><path d="M7 18h1"/></svg>
-);
